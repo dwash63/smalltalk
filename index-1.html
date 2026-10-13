@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#111111">
+<title>SmallTalk</title>
+<style>
+  * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
+  body { margin:0; background:#111; color:#fff; font-family:sans-serif; padding:20px 16px 40px; }
+  h1 { margin:0 0 4px; }
+  .sub { color:#888; margin:0 0 16px; }
+  .tabs { display:flex; gap:8px; margin-bottom:18px; }
+  .tab { flex:1; margin:0; font-size:15px; background:#222; color:#aaa; }
+  .tab.on { background:#e8b84a; color:#111; }
+  .row { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .stage { color:#e8b84a; font-weight:bold; text-transform:uppercase; font-size:13px; letter-spacing:1px; }
+  .chip { background:#333; color:#ccc; font-size:12px; padding:4px 10px; border-radius:20px; }
+  .card { background:#222; border-radius:14px; padding:24px 18px; font-size:22px; line-height:1.4; margin:10px 0 6px; min-height:130px; }
+  .count { color:#666; font-size:12px; margin-bottom:16px; }
+  button { width:100%; padding:16px; border:none; border-radius:12px; font-size:18px; font-weight:bold; margin-bottom:10px; color:#fff; background:#333; }
+  .main { background:#e8b84a; color:#111; font-size:20px; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px; }
+  .grid button { font-size:15px; margin:0; }
+  .pick { background:#222; border:1px solid #444; font-size:18px; padding:20px 12px; }
+  #crumbs { color:#888; margin-bottom:12px; font-size:15px; }
+  #search { margin-top:28px; border-top:1px solid #333; padding-top:20px; }
+  #search h2 { font-size:16px; margin:0 0 10px; color:#ccc; }
+  input { width:100%; padding:14px; border-radius:10px; border:none; font-size:16px; margin-bottom:10px; }
+  .blue { background:#4a8fe8; }
+</style>
+</head>
+<body>
+  <h1>💬 SmallTalk</h1>
+  <p class="sub">Tap Next. Say the line. It never runs out.</p>
+
+  <div class="tabs">
+    <button id="tabFree" class="tab on" onclick="setMode('free')">💬 Free flow</button>
+    <button id="tabDeep" class="tab" onclick="setMode('deep')">🧠 Deep dive</button>
+  </div>
+
+  <!-- FREE FLOW MODE -->
+  <section id="free">
+    <div class="row"><span id="stage" class="stage">Ready?</span><span id="topic" class="chip">no topic yet</span></div>
+    <div id="line" class="card">Tap Start when you're ready to start a conversation.</div>
+    <div id="count" class="count">0 lines so far</div>
+    <button id="next" class="main" onclick="next()">Start ➜</button>
+    <div class="grid">
+      <button onclick="again()">🔄 Different line</button>
+      <button onclick="newTopic()">🔀 New topic</button>
+      <button onclick="wrapUp()">👋 Wrap it up</button>
+      <button onclick="restart()">↺ Start over</button>
+    </div>
+  </section>
+
+  <!-- DEEP DIVE MODE -->
+  <section id="deep" hidden>
+    <div id="crumbs">Pick a topic to sound like an expert</div>
+    <div id="choices" class="grid"></div>
+    <div id="custom" hidden>
+      <input id="cq" placeholder="Type any topic (BBQ, cars, trucks, stocks...)" onkeydown="if(event.key==='Enter') goCustom()">
+      <button class="main" onclick="goCustom()">Let's go ➜</button>
+      <button onclick="dBack()">← Back</button>
+    </div>
+    <div id="deepPlay" hidden>
+      <div class="row"><span id="dStage" class="stage">Ready?</span><span id="dTopic" class="chip"></span></div>
+      <div id="dLine" class="card">Tap Next for your first line.</div>
+      <div id="dCount" class="count">0 lines so far</div>
+      <button class="main" onclick="dNext()">Next ➜</button>
+      <div class="grid">
+        <button onclick="dShow('take')">🧠 Smart take</button>
+        <button onclick="dShow('fact')">📊 Fun fact</button>
+        <button onclick="dShow('ask')">❓ Ask them</button>
+        <button onclick="news()">📰 Latest news</button>
+      </div>
+      <button onclick="if(dType) dShow(dType)">🔄 Different line</button>
+      <button onclick="dBack()">← Change topic</button>
+    </div>
+  </section>
+
+  <div id="search">
+    <h2>🔍 Fact check</h2>
+    <input id="q" placeholder="Search Google..." onkeydown="if(event.key==='Enter') search()">
+    <button class="blue" onclick="search()">Search Google</button>
+  </div>
+
+<script>
+  /* ============ SHARED LINES ============ */
+  const followups = [
+    "Oh nice, how'd you get into that?", "What's the best part about it?", "No way. Tell me more.",
+    "How long have you been into that?", "That's wild. What happened next?", "Was that what you expected?",
+    "What do you like most about it?", "Would you recommend it?", "That's interesting. Why that one?",
+    "Do you do that a lot?", "Who got you into that?", "Wait, really? How?",
+    "What's that like day to day?", "Okay, I need the full story on that.", "How'd that turn out?"
+  ];
+
+  const reactions = [
+    "I can relate to that.", "Honestly, same here.", "That's cool. I've never tried that, but I want to.",
+    "Funny, something similar happened to me.", "I feel that. Life's been busy on my end too.",
+    "That's a good point. Never thought about it like that.", "Ha, that's awesome.", "I respect that a lot.",
+    "That actually sounds really fun.", "I've heard good things about that.", "That makes total sense.",
+    "Love that for you."
+  ];
+
+  /* ============ DEEP DIVE TOPICS ============
+     To add a topic: copy a block like "NFL" and change the lines.
+     take = your smart opinion, ask = question for them, fact = fun fact, news = what to search for latest news */
+  const deep = {
+    "🏈 Football": {
+      "🐴 Broncos": {
+        news: "Denver Broncos",
+        take: [
+          "That 2025 team was built on toughness. Nine comeback wins in a row is no fluke.",
+          "If Bo Nix doesn't break his ankle, I think they're playing in the Super Bowl last year.",
+          "Sean Payton knows how to build a winner. He already did it in New Orleans.",
+          "That defense is legit. Surtain might be the best corner in football.",
+          "Mile High is a real home-field advantage. Visiting teams get gassed in that thin air.",
+          "Trading for Jaylen Waddle tells you they're going all in right now.",
+          "Losing that AFC Championship 10 to 7 still hurts. That one was right there."
+        ],
+        ask: [
+          "How'd you become a Broncos fan?",
+          "Elway or Peyton, who's the bigger Broncos legend?",
+          "What do you think of Bo Nix so far?",
+          "Do you think Sean Payton gets them back to the Super Bowl?",
+          "How do you feel about the Jaylen Waddle trade?",
+          "Have you ever been to a game at Mile High?",
+          "Which Super Bowl win was the sweetest for you?",
+          "Who's the most underrated Bronco right now?",
+          "Be honest, how much do you hate the Chiefs?"
+        ],
+        fact: [
+          "Fun fact: the Broncos have won three Super Bowls: XXXII, XXXIII, and 50.",
+          "Fun fact: Elway won back-to-back Super Bowls in his last two seasons, then retired on top.",
+          "Fun fact: Terrell Davis ran for 2,008 yards in 1998 and won MVP.",
+          "Fun fact: Peyton Manning threw 55 touchdowns for Denver in 2013. Still the NFL record.",
+          "Fun fact: Von Miller was the MVP of Super Bowl 50.",
+          "Fun fact: one row in the upper deck at Mile High is marked at exactly 5,280 feet, one mile up.",
+          "Fun fact: the 2025 Broncos went 14 and 3, tying the franchise record for wins.",
+          "Fun fact: in 2025 the Broncos became the first team ever to win nine straight games by coming from behind.",
+          "Fun fact: the Broncos' late-'70s defense was nicknamed the Orange Crush."
+        ]
+      },
+      "NFL": {
+        news: "NFL",
+        take: [
+          "Honestly, quarterbacks get too much credit and too much blame. Games are really won in the trenches.",
+          "The salary cap is why the NFL has so much parity. A bad team can flip it in one offseason.",
+          "Coaching matters more in football than any other sport. A good scheme hides a lot of weaknesses.",
+          "The draft is basically an educated guess. A lot of first-rounders never live up to it.",
+          "Teams don't want to pay running backs anymore. I get the math, but it's cold.",
+          "Analytics changed fourth downs. Coaches go for it way more than they used to.",
+          "The rules favor offense now. You can't build a team on defense alone like the old days.",
+          "A great offensive line makes an average quarterback look like a star."
+        ],
+        ask: [
+          "Who's your team, and how do you feel about them this year?",
+          "Who's the best quarterback in the league right now, in your opinion?",
+          "Do you think your team has the right head coach?",
+          "Who's the most underrated player in the league?",
+          "What's the best Super Bowl you've ever watched?",
+          "Would you rather have an elite quarterback or an elite defense?",
+          "Do you play fantasy football?",
+          "Who's winning it all this year, if you had to bet?"
+        ],
+        fact: [
+          "Fun fact: the 1972 Dolphins are still the only team to go undefeated all the way through the Super Bowl.",
+          "Fun fact: Tom Brady won seven Super Bowls. That's more than any single franchise.",
+          "Fun fact: the Green Bay Packers are owned by their fans. They're community-owned, not by a billionaire.",
+          "Fun fact: the Bills made four straight Super Bowls in the early '90s and lost all four.",
+          "Fun fact: the two-point conversion didn't come to the NFL until 1994.",
+          "Fun fact: the Lions and Cowboys host a game every Thanksgiving. It's a tradition.",
+          "Fun fact: Super Bowl 50 is the only one that didn't use Roman numerals. 'Super Bowl L' looked weird."
+        ]
+      },
+      "College": {
+        news: "college football",
+        take: [
+          "NIL and the transfer portal basically turned college football into free agency.",
+          "Expanding the playoff was overdue, but it makes the regular season matter a little less.",
+          "Conference realignment is wild. Geography doesn't mean anything anymore.",
+          "Recruiting is the whole game in college. The best coaches are elite recruiters first.",
+          "College atmosphere beats the NFL. The bands, the student sections, the rivalries.",
+          "Rivalry week is the best weekend in sports, no debate.",
+          "Some of the best college players aren't great NFL players. It's a different game."
+        ],
+        ask: [
+          "Where'd you go to school, or who do you root for?",
+          "Who's your team's biggest rival?",
+          "Do you like the expanded playoff or the old way better?",
+          "How do you feel about players getting paid now?",
+          "What's the best game day atmosphere you've ever been to?",
+          "Who's the best college player you've ever watched?",
+          "Is your team any good this year?"
+        ],
+        fact: [
+          "Fun fact: the first college football game was Rutgers vs. Princeton back in 1869.",
+          "Fun fact: Michigan's Big House is the biggest stadium in the country.",
+          "Fun fact: the Rose Bowl is the oldest bowl game. It started in 1902.",
+          "Fun fact: the forward pass wasn't legal in college football until 1906.",
+          "Fun fact: Barry Sanders ran for 2,628 yards in one season at Oklahoma State. That's still the record.",
+          "Fun fact: Oklahoma won 47 games in a row in the 1950s. Nobody's touched that streak.",
+          "Fun fact: college athletes have only been allowed to get paid through NIL deals since 2021.",
+          "Fun fact: the College Football Playoff went to 12 teams starting in 2024."
+        ]
+      }
+    },
+    "🏀 Basketball": {
+      "NBA": {
+        news: "NBA",
+        take: [
+          "The three-point revolution changed everything. Spacing is king now.",
+          "Load management is hurting the regular season. Fans pay to see the stars.",
+          "Counting rings is overrated when you compare players. Teammates matter.",
+          "Small-market teams can win if they draft right. Look at what OKC built.",
+          "The regular season is too long. Nobody really cares until the playoffs.",
+          "Defense in the playoffs is a totally different sport from the regular season."
+        ],
+        ask: [
+          "You a Thunder fan?",
+          "Jordan or LeBron? Gotta pick one.",
+          "Who's the best player in the league right now?",
+          "Did you watch much of the old-school NBA?",
+          "Who's your all-time favorite player?",
+          "Who do you think wins it all this year?"
+        ],
+        fact: [
+          "Fun fact: the Thunder won their first title as the Thunder in 2025, and Shai Gilgeous-Alexander was Finals MVP.",
+          "Fun fact: the Thunder used to be the Seattle SuperSonics. They moved to OKC in 2008.",
+          "Fun fact: Bill Russell won 11 championships with the Celtics.",
+          "Fun fact: Wilt Chamberlain scored 100 points in a single game back in 1962.",
+          "Fun fact: Michael Jordan went 6 for 6 in the Finals. Never lost one.",
+          "Fun fact: the NBA didn't add the three-point line until 1979.",
+          "Fun fact: LeBron passed Kareem for the all-time scoring record in 2023."
+        ]
+      }
+    },
+    "⚾ Baseball": {
+      "MLB": {
+        news: "MLB",
+        take: [
+          "The pitch clock saved baseball. Games actually move now.",
+          "Baseball's the best sport to listen to on the radio. Nothing else comes close.",
+          "Too many strikeouts and home runs now. I miss small ball.",
+          "Nothing beats a ballpark on a summer night.",
+          "Baseball's the hardest sport to be great at. Failing 7 out of 10 times makes you a Hall of Famer."
+        ],
+        ask: [
+          "Who's your team?",
+          "Did you play baseball growing up?",
+          "Ever been to a big-league park? Which one's your favorite?",
+          "Who's the best player you ever saw play?",
+          "Do you like the pitch clock or the old way better?"
+        ],
+        fact: [
+          "Fun fact: Mickey Mantle grew up in Commerce, Oklahoma.",
+          "Fun fact: Johnny Bench, maybe the best catcher ever, is from Binger, Oklahoma.",
+          "Fun fact: Cal Ripken Jr. played 2,632 games in a row.",
+          "Fun fact: every player wears number 42 on April 15th to honor Jackie Robinson.",
+          "Fun fact: Babe Ruth started his career as a pitcher.",
+          "Fun fact: Cy Young won 511 games. Nobody's getting close to that."
+        ]
+      }
+    },
+    "⛳ Golf": {
+      "Golf": {
+        news: "PGA Tour",
+        take: [
+          "Golf is the only sport where you're really just playing against yourself.",
+          "Drive for show, putt for dough. Tournaments are won on the greens.",
+          "Golf is about 90 percent mental. One bad hole can wreck your whole head.",
+          "The equipment's gotten so good that courses keep having to get longer.",
+          "You learn a lot about a person playing 18 holes with them."
+        ],
+        ask: [
+          "You play much golf?",
+          "What's your best round ever?",
+          "Ever hit a hole-in-one?",
+          "Got a favorite course around here?",
+          "Who's your favorite golfer of all time?",
+          "What part of your game would you fix if you could?"
+        ],
+        fact: [
+          "Fun fact: Southern Hills right here in Tulsa hosted the 2022 PGA Championship.",
+          "Fun fact: Jack Nicklaus won 18 majors. Still the record.",
+          "Fun fact: Tiger won the 1997 Masters by 12 strokes.",
+          "Fun fact: the Masters champion gets a green jacket instead of a regular trophy.",
+          "Fun fact: the odds of an average golfer hitting a hole-in-one are often quoted around 12,500 to 1."
+        ]
+      }
+    },
+    "🎣 Outdoors": {
+      "Fishing & Hunting": {
+        news: "Oklahoma fishing hunting",
+        take: [
+          "Fishing's not really about catching. It's about getting away.",
+          "Early morning is the best time to be out there, no question.",
+          "Patience is the whole skill, honestly.",
+          "There's nothing like a quiet morning out in the woods before the sun comes up."
+        ],
+        ask: [
+          "You fish much?",
+          "Where's your favorite spot to fish?",
+          "What's the biggest fish you ever caught?",
+          "Do you hunt at all? Deer, turkey?",
+          "Lake or river?",
+          "Who taught you how to fish?"
+        ],
+        fact: [
+          "Fun fact: Oklahoma's state fish is the white bass, the sand bass.",
+          "Fun fact: deer drop their antlers and grow a whole new set every year.",
+          "Fun fact: Lake Eufaula is the biggest lake fully inside Oklahoma.",
+          "Fun fact: wild turkeys can see in color and have way better eyesight than people."
+        ]
+      }
+    }
+  };
+
+  /* ============ HELPERS ============ */
+  const used = new Set();
+  function pick(list) {
+    let fresh = list.filter(x => !used.has(x));
+    if (fresh.length === 0) { list.forEach(x => used.delete(x)); fresh = list; }
+    const choice = fresh[Math.floor(Math.random() * fresh.length)];
+    used.add(choice);
+    return choice;
+  }
+  function $(id) { return document.getElementById(id); }
+  function plural(n) { return n + (n === 1 ? " line" : " lines") + " so far"; }
+
+  function setMode(m) {
+    $("free").hidden = m !== "free";
+    $("deep").hidden = m !== "deep";
+    $("tabFree").className = "tab" + (m === "free" ? " on" : "");
+    $("tabDeep").className = "tab" + (m === "deep" ? " on" : "");
+    if (m === "deep") renderDeep();
+  }
+
+  /* ============ FREE FLOW ============ */
+  const openers = [
+    "How's your day going so far?", "Have you been here before?", "How do you know everybody here?",
+    "This place has a good vibe. What brought you out?", "Been a long week or a good one?",
+    "I don't think we've met yet. I'm David.", "How's your night going?",
+    "What's been the highlight of your day so far?"
+  ];
+
+  const topics = {
+    "Work": {
+      ask: ["What do you do for work?", "How long have you been doing that?", "What's the best part of your job?", "What did you want to be growing up?"],
+      deeper: ["If you could switch careers tomorrow, what would you pick?", "What's the hardest part of your job that people don't see?", "What got you into that line of work?"]
+    },
+    "Music": {
+      ask: ["What kind of music are you into?", "Been to any good concerts lately?", "What's your go-to song when you need a boost?", "Who's an artist you could listen to all day?"],
+      deeper: ["What's a song that takes you right back to a moment in your life?", "If you could see any artist live, past or present, who would it be?", "What's an album you think everybody should hear?"]
+    },
+    "Food": {
+      ask: ["Got a favorite spot to eat around here?", "Are you more of a cook-at-home or eat-out person?", "What's the best thing you've eaten lately?", "Sweet or savory?"],
+      deeper: ["What's a dish that reminds you of home?", "If you could only eat one cuisine forever, what would it be?", "What's the best meal you've ever had?"]
+    },
+    "Weekend": {
+      ask: ["Got anything planned for the weekend?", "What does your ideal lazy day look like?", "Do anything fun last weekend?"],
+      deeper: ["What's something you've been meaning to try but haven't yet?", "What's the most fun you've had in the last year?"]
+    },
+    "Travel": {
+      ask: ["Been anywhere good lately?", "What's the best trip you've ever taken?", "Beach or mountains?", "Where's the next place you want to go?"],
+      deeper: ["Is there a place you've been that changed how you see things?", "If you could live anywhere for a year, where would it be?"]
+    },
+    "Sports": {
+      ask: ["You follow any sports?", "Who's your team?", "Did you play anything growing up?", "You into fantasy football at all?"],
+      deeper: ["What's the best game you've ever seen in person?", "What's a sports moment you'll never forget?"]
+    },
+    "Shows & Movies": {
+      ask: ["Watching anything good right now?", "What's a movie you could watch over and over?", "Any show you'd recommend?"],
+      deeper: ["What's a movie that actually hit you emotionally?", "What's a show you think is underrated?"]
+    },
+    "Hometown": {
+      ask: ["Are you from around here?", "What's your hometown like?", "What do you miss most about where you grew up?"],
+      deeper: ["What's something about your hometown that outsiders wouldn't get?", "Would you ever move back home?"]
+    },
+    "Goals": {
+      ask: ["What's keeping you busy these days?", "Working on anything exciting?", "What are you looking forward to this year?"],
+      deeper: ["What's a goal you're quietly chasing right now?", "Where do you see yourself in a few years?", "What's something you're proud of lately?"]
+    },
+    "Pets": {
+      ask: ["You got any pets?", "Dog person or cat person?"],
+      deeper: ["What's the funniest thing your pet's ever done?", "If you could have any animal as a pet, what would it be?"]
+    }
+  };
+
+  const bridges = ["That reminds me, ", "Totally switching gears, ", "Random question: ", "Okay, I'm curious. ",
+    "Speaking of that, ", "Let me ask you this: ", "Off topic, but ", "Real quick, "];
+
+  const exits = [
+    "This was a good talk. I'm gonna grab a drink, but hope to catch you later.",
+    "I don't want to keep you, but I really enjoyed this.",
+    "I'm gonna go say hi to a few people, but great chatting with you!",
+    "Let's stay in touch. Want to swap numbers or socials?",
+    "Good meeting you. Enjoy the rest of your night!",
+    "I'll let you get back to it. Really glad we talked."
+  ];
+
+  // After the opener and first question, the conversation loops through this pattern forever
+  const pattern = ["followup", "react", "followup", "deeper", "react", "switch"];
+  const labels = { open:"Open", ask:"Ask", followup:"Follow up", react:"React", deeper:"Go deeper", switch:"New topic", exit:"Wrap up" };
+
+  let step = -1, topic = null, type = null, count = 0;
+
+  function pickTopic() {
+    const names = Object.keys(topics).filter(n => n !== topic);
+    return names[Math.floor(Math.random() * names.length)];
+  }
+
+  function makeLine(t) {
+    if (t === "open") return pick(openers);
+    if (t === "ask") return pick(topics[topic].ask);
+    if (t === "followup") return pick(followups);
+    if (t === "react") return pick(reactions);
+    if (t === "deeper") return pick(topics[topic].deeper);
+    if (t === "exit") return pick(exits);
+    if (t === "switch") {
+      topic = pickTopic();
+      const q = pick(topics[topic].ask);
+      return pick(bridges) + q.charAt(0).toLowerCase() + q.slice(1);
+    }
+  }
+
+  function show(t) {
+    type = t;
+    $("stage").textContent = labels[t];
+    $("line").textContent = makeLine(t);
+    $("topic").textContent = topic || "no topic yet";
+    $("count").textContent = plural(count);
+    $("next").textContent = t === "exit" ? "Start a new chat ➜" : "Next ➜";
+  }
+
+  function next() {
+    if (type === "exit") restart();
+    count++;
+    if (step === -1) { step = 0; topic = pickTopic(); show("open"); return; }
+    if (step === 0) { step = 1; show("ask"); return; }
+    const t = pattern[(step - 1) % pattern.length];
+    step++;
+    show(t);
+  }
+
+  function again() { if (type) show(type); }
+
+  function newTopic() {
+    if (step === -1) { next(); return; }
+    count++;
+    step = 1;
+    show("switch");
+  }
+
+  function wrapUp() { count++; show("exit"); }
+
+  function restart() {
+    step = -1; topic = null; type = null; count = 0;
+    $("stage").textContent = "Ready?";
+    $("topic").textContent = "no topic yet";
+    $("line").textContent = "Tap Start when you're ready to start a conversation.";
+    $("count").textContent = "0 lines so far";
+    $("next").textContent = "Start ➜";
+  }
+
+  /* ============ DEEP DIVE ============ */
+  const dPattern = ["take", "ask", "followup", "fact", "react", "ask"];
+  const dLabels = { take:"Smart take", ask:"Ask them", fact:"Drop a fact", followup:"Follow up", react:"React" };
+  const dFollowups = [
+    "Why do you say that?", "Okay, make your case.", "Wait, really? Who'd you pick instead?",
+    "What makes them better than everybody else?", "How long have you been a fan?",
+    "Be honest, are you a bandwagon fan?", "I hear you. What would you change?",
+    "That's a hot take. I kind of respect it.", "Who got you into it?", "What's your earliest memory of watching?"
+  ];
+  let dPath = [], dStep = 0, dCount = 0;
+
+  const CUSTOM = "✏️ Any topic";
+  const customTakes = [
+    "Honestly, {X} is one of those things that's way deeper than people think.",
+    "I feel like {X} has changed a lot in the last few years.",
+    "The people who are really into {X} are some of the most passionate people out there.",
+    "I've been wanting to learn more about {X}, to be honest.",
+    "I think {X} gets underrated.",
+    "Everybody's got an opinion on {X}, but you can tell who really knows."
+  ];
+  const customAsks = [
+    "How'd you get into {X}?",
+    "What's the best thing about {X} that most people don't get?",
+    "If I wanted to get into {X}, where should I start?",
+    "What's the biggest thing going on with {X} right now?",
+    "Who's the best at {X}, in your opinion?",
+    "What's your favorite memory involving {X}?",
+    "What's the biggest mistake people make with {X}?"
+  ];
+  const dReactions = [
+    "Facts.", "Can't argue with that.", "That's a fair point.", "See, you know your stuff.",
+    "Okay, I'm with you on that.", "Man, that's real.", "I never thought about it that way.",
+    "Ha, you're not wrong."
+  ];
+  let customData = null, dType = null;
+
+  function fill(list, x) { return list.map(s => s.split("{X}").join(x)); }
+
+  function getData() {
+    return dPath[0] === CUSTOM ? customData : deep[dPath[0]][dPath[1]];
+  }
+
+  function renderDeep() {
+    const choices = $("choices");
+    choices.innerHTML = "";
+    const inPlay = dPath.length === 2;
+    const typing = dPath[0] === CUSTOM && !inPlay;
+    $("deepPlay").hidden = !inPlay;
+    $("custom").hidden = !typing;
+    choices.hidden = inPlay || typing;
+    $("crumbs").textContent = dPath.length === 0 ? "Pick a topic to sound like an expert"
+      : typing ? "Type any topic you want to sound smart about"
+      : dPath.length === 1 ? dPath[0] + " → pick one"
+      : (dPath[0] !== CUSTOM && Object.keys(deep[dPath[0]]).length === 1) ? dPath[0] : dPath.join(" → ");
+    if (inPlay || typing) return;
+    const options = dPath.length === 0 ? Object.keys(deep).concat(CUSTOM) : Object.keys(deep[dPath[0]]);
+    options.forEach(name => {
+      const b = document.createElement("button");
+      b.className = "pick";
+      b.textContent = name;
+      b.onclick = () => choose(name);
+      choices.appendChild(b);
+    });
+  }
+
+  function startPlay() {
+    dStep = 0; dCount = 0; dType = null;
+    $("dStage").textContent = "Ready?";
+    $("dTopic").textContent = dPath[1];
+    $("dLine").textContent = "Tap Next for your first line.";
+    $("dCount").textContent = "0 lines so far";
+  }
+
+  function choose(name) {
+    dPath.push(name);
+    // categories with only one option skip straight in
+    if (dPath.length === 1 && name !== CUSTOM) {
+      const subs = Object.keys(deep[name]);
+      if (subs.length === 1) dPath.push(subs[0]);
+    }
+    if (dPath.length === 2) startPlay();
+    renderDeep();
+  }
+
+  function goCustom() {
+    const x = $("cq").value.trim();
+    if (!x) return;
+    customData = { news: x, take: fill(customTakes, x), ask: fill(customAsks, x), fact: null };
+    dPath = [CUSTOM, x];
+    startPlay();
+    renderDeep();
+  }
+
+  function dBack() {
+    dPath.pop();
+    if (dPath.length === 1 && dPath[0] !== CUSTOM && Object.keys(deep[dPath[0]]).length === 1) dPath.pop();
+    renderDeep();
+  }
+
+  function dShow(t) {
+    if (dPath.length < 2) return;
+    const d = getData();
+    if (t === "fact" && !d.fact) {
+      window.open("https://www.google.com/search?q=" + encodeURIComponent("interesting facts about " + d.news), "_blank");
+      $("dStage").textContent = dLabels.fact;
+      $("dLine").textContent = "Opened fun facts about " + d.news + " in a new tab. Pick one and drop it in.";
+      return;
+    }
+    dCount++;
+    $("dStage").textContent = dLabels[t];
+    const isCustom = dPath[0] === CUSTOM;
+    dType = t;
+    $("dLine").textContent = d[t] ? pick(d[t])
+      : t === "followup" ? pick(isCustom ? followups : dFollowups)
+      : pick(isCustom ? reactions : dReactions);
+    $("dCount").textContent = plural(dCount);
+  }
+
+  function dNext() {
+    let t = dPattern[dStep % dPattern.length];
+    dStep++;
+    if (t === "fact" && !getData().fact) t = "take";  // don't pop open tabs on Next
+    dShow(t);
+  }
+
+  function news() {
+    if (dPath.length < 2) return;
+    window.open("https://news.google.com/search?q=" + encodeURIComponent(getData().news), "_blank");
+  }
+
+  /* ============ FACT CHECK ============ */
+  function search() {
+    const q = $("q").value.trim();
+    if (!q) return;
+    window.open("https://www.google.com/search?q=" + encodeURIComponent(q), "_blank");
+  }
+</script>
+</body>
+</html>
